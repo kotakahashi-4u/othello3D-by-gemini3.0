@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CYBER REVERSI 3D</title>
+    <style>
+        :root {
+            --cyan: #00f3ff;
+            --magenta: #ff0055;
+            --cyan-glow: rgba(0, 243, 255, 0.8);
+            --magenta-glow: rgba(255, 0, 85, 0.8);
+            --bg-dark: #020205;
+            --grid-color: rgba(0, 243, 255, 0.15);
+            --board-base: rgba(10, 20, 30, 0.85);
+            --cell-size: 50px;
+            --gap: 4px;
+        }
+
+        body {
+            margin: 0;
+            background-color: var(--bg-dark);
+            color: white;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            perspective: 1200px; /* 3D depth */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+        }
+
+        /* --- Environment --- */
+        .cyber-space {
+            position: absolute;
+            width: 200vw;
+            height: 200vh;
+            background: 
+                linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0) 40%, rgba(0,0,0,0.8)),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px),
+                linear-gradient(180deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 80px 80px;
+            transform: rotateX(60deg) translateY(-100px) translateZ(-500px);
+            animation: gridFlow 10s linear infinite;
+            z-index: -10;
+        }
+
+        @keyframes gridFlow {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 80px; }
+        }
+
+        .scanline-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0,0,0,0),
+                rgba(0,0,0,0) 2px,
+                rgba(255,255,255,0.02) 2px,
+                rgba(255,255,255,0.02) 4px
+            );
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* --- 3D Scene Container --- */
+        .scene {
+            position: relative;
+            transform-style: preserve-3d;
+            /* 固定角度に変更 */
+            transform: rotateX(40deg);
+        }
+
+        /* --- HUD (Floating UI) --- */
+        .hud-layer {
+            position: absolute;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%) translateZ(100px);
+            width: 500px;
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            text-shadow: 0 0 10px currentColor;
+            transform-style: preserve-3d;
+            pointer-events: none; /* Let clicks pass through to board if needed */
+        }
+
+        .score-panel {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 15px 25px;
+            text-align: center;
+            backdrop-filter: blur(4px);
+            transform: rotateX(-10deg); /* Face camera */
+            transition: all 0.3s;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .score-panel.p1 { border-color: var(--cyan); color: var(--cyan); }
+        .score-panel.p2 { border-color: var(--magenta); color: var(--magenta); }
+
+        .score-panel.active {
+            background: rgba(255, 255, 255, 0.05);
+            transform: rotateX(-10deg) scale(1.1) translateZ(20px);
+            box-shadow: 0 0 30px var(--glow-color);
+        }
+        .score-panel.p1.active { --glow-color: var(--cyan-glow); }
+        .score-panel.p2.active { --glow-color: var(--magenta-glow); }
+
+        .big-score { font-size: 2.5rem; font-weight: bold; display: block; }
+        .label { font-size: 0.8rem; letter-spacing: 2px; }
+
+        .game-status {
+            position: absolute;
+            bottom: -100px;
+            width: 100%;
+            text-align: center;
+            font-size: 1.5rem;
+            color: white;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            transform: translateZ(50px) rotateX(-20deg);
+        }
+
+        /* --- The Board (3D Slab) --- */
+        .board-base {
+            width: calc(8 * var(--cell-size) + 9 * var(--gap) + 20px);
+            height: calc(8 * var(--cell-size) + 9 * var(--gap) + 20px);
+            background: var(--board-base);
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            border-radius: 4px;
+            padding: 10px;
+            box-shadow: 
+                0 0 50px rgba(0, 243, 255, 0.1),
+                0 20px 50px rgba(0,0,0,0.8),
+                inset 0 0 30px rgba(0,0,0,0.8);
+            
+            display: grid;
+            grid-template-columns: repeat(8, var(--cell-size));
+            grid-template-rows: repeat(8, var(--cell-size));
+            gap: var(--gap);
+            
+            transform-style: preserve-3d;
+            /* Thickness of the board */
+            position: relative;
+        }
+
+        /* Board sides (thickness) */
+        .board-base::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 243, 255, 0.05);
+            transform: translateZ(-20px);
+            box-shadow: 0 0 20px var(--cyan);
+        }
+        .board-base::after {
+            content: '';
+            position: absolute;
+            top: 100%; left: 0; width: 100%; height: 20px;
+            background: rgba(0,0,0,0.8);
+            transform-origin: top;
+            transform: rotateX(-90deg);
+            border-bottom: 1px solid var(--cyan);
+        }
+
+        /* Cells */
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            position: relative;
+            transform-style: preserve-3d;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s;
+        }
+        .cell:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateZ(5px);
+            border-color: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+        }
+
+        /* Valid Move Marker (Hologram Pillar) */
+        .valid-marker {
+            position: absolute;
+            top: 20%; left: 20%; width: 60%; height: 60%;
+            border: 1px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translateZ(2px);
+            animation: spinMarker 4s linear infinite;
+            pointer-events: none;
+            display: none;
+        }
+        .cell:hover .valid-marker {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #fff;
+            box-shadow: 0 0 10px white;
+        }
+        @keyframes spinMarker {
+            0% { transform: translateZ(2px) rotate(0deg); }
+            100% { transform: translateZ(2px) rotate(360deg); }
+        }
+
+        /* --- 3D Disc --- */
+        .disc-container {
+            width: 80%; height: 80%;
+            position: absolute;
+            top: 10%; left: 10%;
+            transform-style: preserve-3d;
+            transition: transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+        
+        .disc-container.flipped {
+            transform: rotateY(180deg);
+        }
+        .disc-container.new {
+            animation: dropIn 0.4s ease-out backwards;
+        }
+
+        @keyframes dropIn {
+            0% { transform: translateZ(100px) scale(0); opacity: 0; }
+            100% { transform: translateZ(0) scale(1); opacity: 1; }
+        }
+
+        /* Stacking layers to create thickness */
+        .layer {
+            position: absolute;
+            width: 100%; height: 100%;
+            border-radius: 50%;
+            backface-visibility: hidden; /* Hide back when rotated */
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.8);
+        }
+
+        /* Front Side (Cyan) layers */
+        .f1 { transform: translateZ(4px); background: radial-gradient(#222, #000); border: 2px solid var(--cyan); }
+        .f2 { transform: translateZ(3px); background: var(--cyan); opacity: 0.5; width: 98%; height: 98%; left: 1%; top: 1%; }
+        .f3 { transform: translateZ(2px); background: var(--cyan); opacity: 0.5; width: 96%; height: 96%; left: 2%; top: 2%; }
+        
+        /* Inner glow core */
+        .f1::after {
+            content: ''; position: absolute;
+            top: 25%; left: 25%; width: 50%; height: 50%;
+            background: var(--cyan);
+            border-radius: 50%;
+            filter: blur(4px);
+            box-shadow: 0 0 10px var(--cyan);
+        }
+
+        /* Back Side (Magenta) layers - Rotated 180 so they face the other way */
+        .b1 { transform: rotateY(180deg) translateZ(4px); background: radial-gradient(#222, #000); border: 2px solid var(--magenta); }
+        .b2 { transform: rotateY(180deg) translateZ(3px); background: var(--magenta); opacity: 0.5; width: 98%; height: 98%; left: 1%; top: 1%; }
+        .b3 { transform: rotateY(180deg) translateZ(2px); background: var(--magenta); opacity: 0.5; width: 96%; height: 96%; left: 2%; top: 2%; }
+
+        .b1::after {
+            content: ''; position: absolute;
+            top: 25%; left: 25%; width: 50%; height: 50%;
+            background: var(--magenta);
+            border-radius: 50%;
+            filter: blur(4px);
+            box-shadow: 0 0 10px var(--magenta);
+        }
+
+        /* --- Controls --- */
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 200;
+        }
+
+        button {
+            background: rgba(0,0,0,0.7);
+            border: 1px solid var(--cyan);
+            color: var(--cyan);
+            padding: 10px 20px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: var(--cyan);
+            color: black;
+            box-shadow: 0 0 20px var(--cyan);
+        }
+        button.secondary {
+            border-color: #666; color: #aaa;
+        }
+        button.secondary:hover {
+            border-color: #fff; color: #fff; background: rgba(255,255,255,0.2);
+        }
+
+        /* --- Modal --- */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 300;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        .modal.show { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            border: 2px solid var(--cyan);
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 0 50px var(--cyan-glow);
+            background: #000;
+            transform: scale(0.8);
+            transition: transform 0.3s;
+        }
+        .modal.show .modal-content { transform: scale(1); }
+        .win-title { font-size: 3rem; margin-bottom: 20px; animation: flicker 2s infinite; }
+        
+        @keyframes flicker {
+            0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; text-shadow: 0 0 10px currentColor; }
+            20%, 24%, 55% { opacity: 0.5; text-shadow: none; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="cyber-space"></div>
+    <div class="scanline-overlay"></div>
+
+    <div class="scene" id="scene3d">
+        <!-- HUD Layer floats above board -->
+        <div class="hud-layer">
+            <div class="score-panel p1 active" id="p1Panel">
+                <span class="label">PLAYER (CYAN)</span>
+                <span class="big-score" id="s1">2</span>
+            </div>
+            <div class="score-panel p2" id="p2Panel">
+                <span class="label">CPU (MAGENTA)</span>
+                <span class="big-score" id="s2">2</span>
+            </div>
+            <div class="game-status" id="statusMsg">SYSTEM INITIALIZED</div>
+        </div>
+
+        <!-- The 3D Board -->
+        <div class="board-base" id="board"></div>
+    </div>
+
+    <div class="controls">
+        <button onclick="game.init()">RESTART SYSTEM</button>
+        <button id="aiBtn" onclick="game.toggleAI()">MODE: vs CPU</button>
+        <button class="secondary" id="soundBtn" onclick="audio.toggle()">AUDIO: ON</button>
+    </div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <div class="win-title" id="winTitle">VICTORY</div>
+            <div id="winScore" style="font-size:1.5rem; margin-bottom:20px;"></div>
+            <button onclick="game.init()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+<script>
+/* Cyber Audio Synthesis 
+   Generates sound on the fly
+*/
+class AudioSynth {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.enabled = true;
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.15;
+        this.master.connect(this.ctx.destination);
+    }
+
+    toggle() {
+        this.enabled = !this.enabled;
+        const btn = document.getElementById('soundBtn');
+        btn.innerText = this.enabled ? "AUDIO: ON" : "AUDIO: MUTE";
+        btn.style.opacity = this.enabled ? 1 : 0.5;
+        if(this.enabled && this.ctx.state === 'suspended') this.ctx.resume();
+    }
+
+    play(freq, type, dur, slideTo=null) {
+        if(!this.enabled) return;
+        if(this.ctx.state === 'suspended') this.ctx.resume();
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        if(slideTo) {
+            osc.frequency.exponentialRampToValueAtTime(slideTo, this.ctx.currentTime + dur);
+        }
+        gain.gain.setValueAtTime(1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+        
+        osc.connect(gain);
+        gain.connect(this.master);
+        osc.start();
+        osc.stop(this.ctx.currentTime + dur);
+    }
+
+    sfxPlace() {
+        // High-tech thud
+        this.play(600, 'square', 0.1, 100);
+        setTimeout(() => this.play(100, 'sawtooth', 0.2), 50);
+    }
+    sfxFlip() {
+        // Digital zip
+        this.play(200, 'sine', 0.15, 800);
+    }
+    sfxWin() {
+        // Arpeggio
+        [400, 500, 600, 800, 1000].forEach((f, i) => {
+            setTimeout(() => this.play(f, 'square', 0.2), i*100);
+        });
+    }
+    sfxError() {
+        this.play(150, 'sawtooth', 0.3, 50);
+    }
+}
+const audio = new AudioSynth();
+
+/*
+   Game Logic (Reversi)
+*/
+class Reversi3D {
+    constructor() {
+        this.size = 8;
+        this.board = [];
+        this.p1 = 1; // Cyan
+        this.p2 = 2; // Magenta
+        this.turn = 1;
+        this.vsAI = true;
+        this.busy = false;
+        
+        this.domBoard = document.getElementById('board');
+        this.msg = document.getElementById('statusMsg');
+        
+        this.init();
+    }
+
+    init() {
+        this.board = Array(8).fill().map(() => Array(8).fill(0));
+        // Init 4 discs
+        this.board[3][3] = 2;
+        this.board[4][4] = 2;
+        this.board[3][4] = 1;
+        this.board[4][3] = 1;
+        
+        this.turn = 1;
+        this.busy = false;
+        
+        document.getElementById('modal').classList.remove('show');
+        this.render();
+        this.updateHUD();
+        this.msg.innerText = "SYSTEM READY - PLAYER TURN";
+    }
+
+    toggleAI() {
+        this.vsAI = !this.vsAI;
+        document.getElementById('aiBtn').innerText = this.vsAI ? "MODE: vs CPU" : "MODE: vs PLAYER";
+        this.init();
+    }
+
+    render() {
+        this.domBoard.innerHTML = '';
+        for(let y=0; y<8; y++) {
+            for(let x=0; x<8; x++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.dataset.x = x;
+                cell.dataset.y = y;
+                cell.onclick = () => this.click(x, y);
+                
+                // Valid move marker
+                const marker = document.createElement('div');
+                marker.className = 'valid-marker';
+                cell.appendChild(marker);
+
+                // Disc
+                const val = this.board[y][x];
+                if(val !== 0) {
+                    this.addDisc(cell, val, false);
+                }
+                
+                this.domBoard.appendChild(cell);
+            }
+        }
+        this.highlightMoves();
+    }
+
+    addDisc(cell, player, animate) {
+        const container = document.createElement('div');
+        container.className = `disc-container ${animate ? 'new' : ''}`;
+        if(player === 2) container.classList.add('flipped');
+
+        // Create 3 layers for front (Cyan) and 3 for back (Magenta) to give thickness
+        ['f1','f2','f3'].forEach(c => {
+            const d = document.createElement('div');
+            d.className = `layer ${c}`;
+            container.appendChild(d);
+        });
+        ['b1','b2','b3'].forEach(c => {
+            const d = document.createElement('div');
+            d.className = `layer ${c}`;
+            container.appendChild(d);
+        });
+
+        cell.appendChild(container);
+    }
+
+    isValid(x, y, player) {
+        if(this.board[y][x] !== 0) return false;
+        const opp = player === 1 ? 2 : 1;
+        const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+        
+        for(let d of dirs) {
+            let cx = x + d[0], cy = y + d[1];
+            let hasOpp = false;
+            while(cx>=0 && cx<8 && cy>=0 && cy<8) {
+                if(this.board[cy][cx] === opp) hasOpp = true;
+                else if(this.board[cy][cx] === player) {
+                    if(hasOpp) return true;
+                    break;
+                } else break;
+                cx += d[0]; cy += d[1];
+            }
+        }
+        return false;
+    }
+
+    getFlips(x, y, player) {
+        let flips = [];
+        const opp = player === 1 ? 2 : 1;
+        const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+        
+        dirs.forEach(d => {
+            let cx = x + d[0], cy = y + d[1];
+            let potential = [];
+            while(cx>=0 && cx<8 && cy>=0 && cy<8) {
+                if(this.board[cy][cx] === opp) potential.push({x:cx, y:cy});
+                else if(this.board[cy][cx] === player) {
+                    if(potential.length > 0) flips.push(...potential);
+                    break;
+                } else break;
+                cx += d[0]; cy += d[1];
+            }
+        });
+        return flips;
+    }
+
+    highlightMoves() {
+        document.querySelectorAll('.valid-marker').forEach(e => e.style.display='none');
+        if(this.vsAI && this.turn === 2) return; // Don't show for CPU
+        
+        for(let y=0; y<8; y++) {
+            for(let x=0; x<8; x++) {
+                if(this.isValid(x, y, this.turn)) {
+                    const cell = this.domBoard.children[y*8+x];
+                    cell.querySelector('.valid-marker').style.display = 'block';
+                }
+            }
+        }
+    }
+
+    async click(x, y) {
+        if(this.busy) return;
+        if(this.vsAI && this.turn === 2) return;
+
+        if(!this.isValid(x, y, this.turn)) {
+            audio.sfxError();
+            return;
+        }
+        await this.move(x, y);
+    }
+
+    async move(x, y) {
+        this.busy = true;
+        const flips = this.getFlips(x, y, this.turn);
+        
+        // Place disc
+        this.board[y][x] = this.turn;
+        const cell = this.domBoard.children[y*8+x];
+        this.addDisc(cell, this.turn, true);
+        audio.sfxPlace();
+        
+        // Hide markers
+        document.querySelectorAll('.valid-marker').forEach(e => e.style.display='none');
+        
+        // Sort flips for ripple effect
+        flips.sort((a,b) => {
+            const da = Math.abs(a.x-x) + Math.abs(a.y-y);
+            const db = Math.abs(b.x-x) + Math.abs(b.y-y);
+            return da - db;
+        });
+
+        // Animate Flips
+        await new Promise(r => setTimeout(r, 200));
+        for(let i=0; i<flips.length; i++) {
+            const p = flips[i];
+            this.board[p.y][p.x] = this.turn;
+            const target = this.domBoard.children[p.y*8+p.x].querySelector('.disc-container');
+            
+            setTimeout(() => {
+                if(target) {
+                    audio.sfxFlip();
+                    if(this.turn === 1) target.classList.remove('flipped');
+                    else target.classList.add('flipped');
+                }
+            }, i * 50);
+        }
+
+        setTimeout(() => {
+            this.updateHUD();
+            this.nextTurn();
+        }, flips.length * 50 + 300);
+    }
+
+    nextTurn() {
+        const opp = this.turn === 1 ? 2 : 1;
+        if(this.canMove(opp)) {
+            this.turn = opp;
+            this.updateHUD();
+            this.highlightMoves();
+            this.busy = false;
+            
+            if(this.vsAI && this.turn === 2) {
+                this.busy = true;
+                this.msg.innerText = "CPU CALCULATING...";
+                setTimeout(() => this.cpuMove(), 800);
+            } else {
+                this.msg.innerText = "PLAYER TURN";
+            }
+        } else {
+            if(this.canMove(this.turn)) {
+                this.msg.innerText = "OPPONENT PASSED";
+                this.updateHUD();
+                this.highlightMoves();
+                this.busy = false;
+                // If I'm CPU and passed, player goes. If I'm Player and passed, CPU goes.
+                if(this.vsAI && this.turn === 2) {
+                    this.busy = true;
+                    setTimeout(() => this.cpuMove(), 800);
+                }
+            } else {
+                this.endGame();
+            }
+        }
+    }
+
+    canMove(p) {
+        for(let y=0; y<8; y++)
+            for(let x=0; x<8; x++)
+                if(this.isValid(x, y, p)) return true;
+        return false;
+    }
+
+    cpuMove() {
+        // Simple AI with weights
+        const weights = [
+            [100,-20,10, 5, 5,10,-20,100],
+            [-20,-50, 1, 1, 1, 1,-50,-20],
+            [ 10,  1, 5, 2, 2, 5,  1, 10],
+            [  5,  1, 2, 1, 1, 2,  1,  5],
+            [  5,  1, 2, 1, 1, 2,  1,  5],
+            [ 10,  1, 5, 2, 2, 5,  1, 10],
+            [-20,-50, 1, 1, 1, 1,-50,-20],
+            [100,-20,10, 5, 5,10,-20,100]
+        ];
+        
+        let best = null;
+        let maxS = -99999;
+        
+        for(let y=0; y<8; y++) {
+            for(let x=0; x<8; x++) {
+                if(this.isValid(x, y, 2)) {
+                    let score = weights[y][x] + Math.random() * 5;
+                    score += this.getFlips(x,y,2).length;
+                    if(score > maxS) {
+                        maxS = score;
+                        best = {x,y};
+                    }
+                }
+            }
+        }
+        
+        if(best) this.move(best.x, best.y);
+    }
+
+    updateHUD() {
+        let s1=0, s2=0;
+        this.board.flat().forEach(v => {
+            if(v===1) s1++; else if(v===2) s2++;
+        });
+        document.getElementById('s1').innerText = s1;
+        document.getElementById('s2').innerText = s2;
+        
+        const p1p = document.getElementById('p1Panel');
+        const p2p = document.getElementById('p2Panel');
+        if(this.turn === 1) {
+            p1p.classList.add('active'); p2p.classList.remove('active');
+        } else {
+            p1p.classList.remove('active'); p2p.classList.add('active');
+        }
+    }
+
+    endGame() {
+        audio.sfxWin();
+        let s1=0, s2=0;
+        this.board.flat().forEach(v => {
+            if(v===1) s1++; else if(v===2) s2++;
+        });
+        
+        const title = document.getElementById('winTitle');
+        const score = document.getElementById('winScore');
+        
+        if(s1 > s2) {
+            title.innerText = "PLAYER WINS";
+            title.style.color = "var(--cyan)";
+            title.style.textShadow = "0 0 20px var(--cyan)";
+        } else if(s2 > s1) {
+            title.innerText = "CPU WINS";
+            title.style.color = "var(--magenta)";
+            title.style.textShadow = "0 0 20px var(--magenta)";
+        } else {
+            title.innerText = "DRAW";
+            title.style.color = "white";
+        }
+        score.innerText = `CYAN: ${s1} - MAGENTA: ${s2}`;
+        document.getElementById('modal').classList.add('show');
+    }
+}
+
+const game = new Reversi3D();
+
+</script>
+</body>
+</html>
