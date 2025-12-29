@@ -13,8 +13,26 @@
             --bg-dark: #020205;
             --grid-color: rgba(0, 243, 255, 0.15);
             --board-base: rgba(10, 20, 30, 0.85);
+            
+            /* デフォルト（PC用） */
             --cell-size: 50px;
             --gap: 4px;
+        }
+
+        /* --- Mobile Responsive Variables --- */
+        @media (max-width: 600px) {
+            :root {
+                /* モバイルではセルサイズを縮小 (画面幅に合わせて調整) */
+                --cell-size: 10vw; 
+                /* 420px以上のスマホなら固定値、それ以下なら計算値に制限 */
+                --gap: 2px;
+            }
+            /* さらに小さい画面用 */
+            @media (max-width: 380px) {
+                :root {
+                    --cell-size: 36px;
+                }
+            }
         }
 
         body {
@@ -30,6 +48,8 @@
             justify-content: center;
             align-items: center;
             user-select: none;
+            /* タッチ操作の遅延を防ぐ */
+            touch-action: manipulation;
         }
 
         /* --- Environment --- */
@@ -70,8 +90,8 @@
         .scene {
             position: relative;
             transform-style: preserve-3d;
-            /* 固定角度に変更 */
             transform: rotateX(40deg);
+            transition: transform 0.5s;
         }
 
         /* --- HUD (Floating UI) --- */
@@ -80,13 +100,15 @@
             top: -200px;
             left: 50%;
             transform: translateX(-50%) translateZ(100px);
-            width: 500px;
+            /* 幅を固定値から相対値に変更し、最大幅を設定 */
+            width: 90%; 
+            max-width: 500px;
             display: flex;
             justify-content: space-between;
             text-transform: uppercase;
             text-shadow: 0 0 10px currentColor;
             transform-style: preserve-3d;
-            pointer-events: none; /* Let clicks pass through to board if needed */
+            pointer-events: none;
         }
 
         .score-panel {
@@ -95,9 +117,25 @@
             padding: 15px 25px;
             text-align: center;
             backdrop-filter: blur(4px);
-            transform: rotateX(-10deg); /* Face camera */
+            transform: rotateX(-10deg);
             transition: all 0.3s;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            /* モバイルでのレイアウト崩れ防止 */
+            min-width: 80px; 
+            box-sizing: border-box;
+        }
+
+        /* モバイル用のHUD調整 */
+        @media (max-width: 600px) {
+            .hud-layer {
+                top: -160px; /* ボードに近い位置に調整 */
+            }
+            .score-panel {
+                padding: 10px 15px;
+            }
+            .big-score { font-size: 2rem !important; }
+            .label { font-size: 0.6rem !important; letter-spacing: 0px !important; }
+            .game-status { font-size: 1.0rem !important; bottom: -80px !important; }
         }
 
         .score-panel.p1 { border-color: var(--cyan); color: var(--cyan); }
@@ -144,8 +182,10 @@
             gap: var(--gap);
             
             transform-style: preserve-3d;
-            /* Thickness of the board */
             position: relative;
+            
+            /* 中央寄せを確実にする */
+            margin: 0 auto;
         }
 
         /* Board sides (thickness) */
@@ -177,6 +217,8 @@
             transform-style: preserve-3d;
             cursor: pointer;
             transition: background 0.2s, transform 0.2s;
+            /* タップ時のハイライト色変更（モバイル用） */
+            -webkit-tap-highlight-color: transparent;
         }
         .cell:hover {
             background: rgba(255, 255, 255, 0.1);
@@ -276,6 +318,25 @@
             z-index: 200;
         }
 
+        /* モバイル用のコントロール調整 */
+        @media (max-width: 600px) {
+            .controls {
+                right: 0;
+                left: 0;
+                bottom: 20px;
+                flex-direction: row; /* 横並びに変更 */
+                justify-content: center;
+                flex-wrap: wrap; /* 画面幅が極端に狭い場合の折り返し */
+                pointer-events: none; /* コンテナ自体はクリック透過 */
+            }
+            .controls button {
+                pointer-events: auto; /* ボタンはクリック可能に */
+                font-size: 0.8rem;
+                padding: 8px 12px;
+                background: rgba(0,0,0,0.85); /* 背景を濃くして視認性向上 */
+            }
+        }
+
         button {
             background: rgba(0,0,0,0.7);
             border: 1px solid var(--cyan);
@@ -322,10 +383,15 @@
             background: #000;
             transform: scale(0.8);
             transition: transform 0.3s;
+            max-width: 90%; /* モバイルではみ出し防止 */
         }
         .modal.show .modal-content { transform: scale(1); }
         .win-title { font-size: 3rem; margin-bottom: 20px; animation: flicker 2s infinite; }
         
+        @media (max-width: 600px) {
+            .win-title { font-size: 2rem; }
+        }
+
         @keyframes flicker {
             0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; text-shadow: 0 0 10px currentColor; }
             20%, 24%, 55% { opacity: 0.5; text-shadow: none; }
@@ -339,27 +405,25 @@
     <div class="scanline-overlay"></div>
 
     <div class="scene" id="scene3d">
-        <!-- HUD Layer floats above board -->
         <div class="hud-layer">
             <div class="score-panel p1 active" id="p1Panel">
-                <span class="label">PLAYER (CYAN)</span>
+                <span class="label">PLAYER</span>
                 <span class="big-score" id="s1">2</span>
             </div>
             <div class="score-panel p2" id="p2Panel">
-                <span class="label">CPU (MAGENTA)</span>
+                <span class="label">CPU</span>
                 <span class="big-score" id="s2">2</span>
             </div>
             <div class="game-status" id="statusMsg">SYSTEM INITIALIZED</div>
         </div>
 
-        <!-- The 3D Board -->
         <div class="board-base" id="board"></div>
     </div>
 
     <div class="controls">
-        <button onclick="game.init()">RESTART SYSTEM</button>
-        <button id="aiBtn" onclick="game.toggleAI()">MODE: vs CPU</button>
-        <button class="secondary" id="soundBtn" onclick="audio.toggle()">AUDIO: ON</button>
+        <button onclick="game.init()">RESTART</button>
+        <button id="aiBtn" onclick="game.toggleAI()">MODE: CPU</button>
+        <button class="secondary" id="soundBtn" onclick="audio.toggle()">VOL: ON</button>
     </div>
 
     <div class="modal" id="modal">
@@ -386,7 +450,7 @@ class AudioSynth {
     toggle() {
         this.enabled = !this.enabled;
         const btn = document.getElementById('soundBtn');
-        btn.innerText = this.enabled ? "AUDIO: ON" : "AUDIO: MUTE";
+        btn.innerText = this.enabled ? "VOL: ON" : "VOL: OFF";
         btn.style.opacity = this.enabled ? 1 : 0.5;
         if(this.enabled && this.ctx.state === 'suspended') this.ctx.resume();
     }
@@ -465,12 +529,12 @@ class Reversi3D {
         document.getElementById('modal').classList.remove('show');
         this.render();
         this.updateHUD();
-        this.msg.innerText = "SYSTEM READY - PLAYER TURN";
+        this.msg.innerText = "SYSTEM READY";
     }
 
     toggleAI() {
         this.vsAI = !this.vsAI;
-        document.getElementById('aiBtn').innerText = this.vsAI ? "MODE: vs CPU" : "MODE: vs PLAYER";
+        document.getElementById('aiBtn').innerText = this.vsAI ? "MODE: CPU" : "MODE: 1vs1";
         this.init();
     }
 
@@ -638,7 +702,7 @@ class Reversi3D {
             
             if(this.vsAI && this.turn === 2) {
                 this.busy = true;
-                this.msg.innerText = "CPU CALCULATING...";
+                this.msg.innerText = "CPU THINKING...";
                 setTimeout(() => this.cpuMove(), 800);
             } else {
                 this.msg.innerText = "PLAYER TURN";
